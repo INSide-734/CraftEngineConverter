@@ -1,0 +1,129 @@
+rules:
+  # ===================================================================
+  # == 内容规则集 1: 针对 "item" 类型的转换
+  # ===================================================================
+  - name: "Minecraft 物品数据迁移 (v1 -> v2)"
+    content: "item" # 此规则集应用于 YAML 文件中所有 'items' 开头的顶级键
+
+    # -----------------------------------------------------------------
+    # ✨ CONTEXT BLOCK: 定义可在此规则集中重用的动态变量
+    # 变量按顺序评估，后面的可以引用前面的。
+    # -----------------------------------------------------------------
+    context:
+      # 从 ID (如 'diamond_pickaxe') 提取材质 ('diamond')
+      material:
+        expression: "content_id.split('_')[0] if '_' in content_id else 'unknown'"
+        default_value: "generic" # 表达式失败时的后备值
+
+      # 从原始数据中安全地获取等级，如果不存在则默认为 0
+      level:
+        expression: "get(data, 'old_stats.level', 0)"
+
+      # 基于 'level' 和 'material' 判断稀有度
+      rarity:
+        expression: >- # 使用 >- 保留换行符，便于阅读长表达式
+          'Legendary' if level > 5 and material in ['diamond', 'netherite']
+          else 'Rare' if level > 3
+          else 'Common'
+
+      # 判断是否为特殊物品 (布尔值)
+      is_special:
+        expression: "rarity != 'Common' or get(data, 'legacy_properties.is_quest_item', False)"
+
+      # 组合其他上下文变量来生成一个新的显示名称
+      new_display_name:
+        expression: "f'[{rarity}] {material.replace('_', ' ').title()}'"
+
+    # -----------------------------------------------------------------
+    # 📜 RULES LIST: 针对 'item' 的具体转换规则
+    # -----------------------------------------------------------------
+    rules:
+      - name: "Rule_A_Cleanup"
+        # 无条件，首先对所有物品执行清理和重命名
+        actions:
+          delete:
+            - legacy_properties # 删除整个旧的属性块
+            - temp_notes      # 删除临时笔记字段
+          rename:
+            old_stats: stats # 将 'old_stats' 重命名为 'stats'
+
+      - name: "Rule_B_SetCoreData"
+        # 此规则依赖于前一个清理规则的完成
+        depends_on: "Rule_A_Cleanup" 
+        conditions:
+          # 使用表达式作为条件，只有材质被成功识别的物品才会继续
+          - "material != 'unknown'"
+        actions:
+          set:
+            # 用法1: 使用 context 变量通过表达式设置值
+            display_name:
+              expression: "new_display_name"
+            # 用法2: 静态值
+            schema_version: "v2.0"
+            is_migrated: true
+            # 用法3: 使用简单占位符（仍然支持）
+            description: "A {rarity} item made of {material}."
+            # 用法4: 表达式计算失败时的后备值
+            stats.attack_power:
+              expression: "stats.damage * 1.5" # 如果 'stats.damage' 不存在，此表达式会失败
+              default_value: 5 # 失败时，将 attack_power 设为 5
+
+      - name: "Rule_C_HandleTagsAndLore"
+        conditions:
+          # 仅对被判定为 'special' 的物品执行
+          - "is_special == True"
+        actions:
+          # 在列表末尾添加元素
+          append:
+            tags:
+              - "special_edition"
+              - "{rarity}" # 支持占位符
+              - "migrated_item"
+          # 在列表开头添加元素
+          prepend:
+            lore:
+              - "This is a special item."
+              - "Material: {material}, Level: {level}"
+
+      - name: "Rule_D_GenerateUniqueIDs"
+        # 无条件，为所有物品生成序列ID
+        actions:
+          sequence:
+            # 示例: 经典的纯数字递增，用于 CustomModelData
+            # 共享序列：为所有物品生成一个全局唯一的 CustomModelData
+            stats.custom_model_data:
+              id: "global_custom_model_data" # <-- 使用共享ID
+              start: 50000
+              step: 1
+            # 独立序列：此序列的计数器仅在此规则("Rule_D_GenerateUniqueIDs")内部有效
+            internal_id:
+              start: 1
+              step: 1
+              format: 'item-v2-{counter}'
+
+      - name: "Rule_E_DisabledExample"
+        # 一个被临时禁用的规则，用于展示 'skip' 功能
+        conditions:
+          - "material == 'wood'"
+        actions:
+          skip: true # 因为此项为 true，下面的 delete 操作将不会执行
+          delete:
+            - stats.flammability
+
+  # ===================================================================
+  # == 内容规则集 2: 针对 "block" 类型的转换 (一个更简单的例子)
+  # ===================================================================
+  - name: "Minecraft 方块数据标准化"
+    content: "block" # 此规则集应用于 'blocks' 键
+    rules:
+      - name: "StandardizeBlockProperties"
+        # 无条件，应用于所有方块
+        actions:
+          set:
+            # 直接在表达式中使用 content_id
+            formatted_name:
+              expression: "f'Block - {content_id.replace('_', ' ').title()}'"
+          append:
+            properties:
+              - "is_solid"
+              - "auto_generated"

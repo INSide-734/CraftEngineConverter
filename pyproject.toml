@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "testtool"
+version = "0.1.0"
+description = ""
+authors = ["INSide_734 <3217962725@qq.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pyyaml = "^6.0.2"
+colorama = "^0.4.6"
+prompt-toolkit = "^3.0.51"
+textual = "^3.3.0"
+humanize = "^4.12.3"
+rich = "^14.0.0"
+tqdm = "^4.67.1"
+asteval = "^1.0.6"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
